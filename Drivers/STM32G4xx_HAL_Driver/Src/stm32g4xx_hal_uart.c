@@ -218,6 +218,7 @@ static void UART_RxISR_8BIT(UART_HandleTypeDef *huart);
 static void UART_RxISR_16BIT(UART_HandleTypeDef *huart);
 static void UART_RxISR_8BIT_FIFOEN(UART_HandleTypeDef *huart);
 static void UART_RxISR_16BIT_FIFOEN(UART_HandleTypeDef *huart);
+static void UART_RxISR_8BIT_RTOS(UART_HandleTypeDef *huart);
 /**
   * @}
   */
@@ -3496,7 +3497,7 @@ HAL_StatusTypeDef UART_Start_Receive_IT(UART_HandleTypeDef *huart, uint8_t *pDat
     }
     else
     {
-      huart->RxISR = UART_RxISR_8BIT;
+      huart->RxISR = UART_RxISR_8BIT_RTOS;
     }
 
     /* Enable the UART Parity Error interrupt and Data Register Not Empty interrupt */
@@ -4256,6 +4257,33 @@ static void UART_RxISR_8BIT(UART_HandleTypeDef *huart)
   {
     /* Clear RXNE interrupt flag */
     __HAL_UART_SEND_REQ(huart, UART_RXDATA_FLUSH_REQUEST);
+  }
+}
+
+/**
+  * @brief RX interrupt handler for 7 or 8 bits data word length .
+  * @param huart UART handle.
+  * @retval None
+  */
+static void UART_RxISR_8BIT_RTOS(UART_HandleTypeDef *huart)
+{
+  uint16_t uhMask = huart->Mask;
+  uint16_t  uhdata;
+
+  /* Check that a Rx process is ongoing */
+  if (huart->RxState == HAL_UART_STATE_BUSY_RX)
+  {
+    uhdata = (uint16_t) READ_REG(huart->Instance->RDR);
+    *huart->pRxBuffPtr = (uint8_t)(uhdata & (uint8_t)uhMask);
+
+        /* Standard reception API called */
+#if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
+        /*Call registered Rx complete callback*/
+        huart->RxCpltCallback(huart);
+#else
+        /*Call legacy weak Rx complete callback*/
+        HAL_UART_RxCpltCallback(huart);
+#endif /* USE_HAL_UART_REGISTER_CALLBACKS */
   }
 }
 

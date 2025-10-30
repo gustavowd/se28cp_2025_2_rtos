@@ -47,6 +47,11 @@ osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
 volatile uint32_t counter = 0;
 SemaphoreHandle_t sem = NULL;
+//SemaphoreHandle_t sem_rx = NULL;
+QueueHandle_t queue_rx;
+QueueHandle_t queue_keyb;
+SemaphoreHandle_t mutex = NULL;
+TimerHandle_t debounce;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -89,9 +94,12 @@ void envia_serial_1(void *param){
 	char *texto = "Olá mundo da tarefa 1!\n\r";
 	uint32_t len = strlen(texto);
 	while(1){
-		if (HAL_UART_Transmit_IT(&hlpuart1, (uint8_t *)texto, len) == HAL_OK){
-			xSemaphoreTake(sem, portMAX_DELAY);
-			cnt1++;
+		if (xSemaphoreTake(mutex, 100) == pdTRUE){
+			if (HAL_UART_Transmit_IT(&hlpuart1, (uint8_t *)texto, len) == HAL_OK){
+				xSemaphoreTake(sem, portMAX_DELAY);
+				cnt1++;
+			}
+			xSemaphoreGive(mutex);
 		}
 		taskYIELD();
 	}
@@ -102,12 +110,57 @@ void envia_serial_2(void *param){
 	char *texto = "Olá mundo da tarefa 2!\n\r";
 	uint32_t len = strlen(texto);
 	while(1){
-		if (HAL_UART_Transmit_IT(&hlpuart1, (uint8_t *)texto, len) == HAL_OK){
-			xSemaphoreTake(sem, portMAX_DELAY);
-			cnt2++;
+		if (xSemaphoreTake(mutex, 100) == pdTRUE){
+			if (HAL_UART_Transmit_IT(&hlpuart1, (uint8_t *)texto, len) == HAL_OK){
+				xSemaphoreTake(sem, portMAX_DELAY);
+				cnt2++;
+			}
+			xSemaphoreGive(mutex);
 		}
 		taskYIELD();
 	}
+}
+
+void transmite_uart(uint8_t *string, uint32_t len){
+	if (xSemaphoreTake(mutex, 100) == pdTRUE){
+		if (HAL_UART_Transmit_IT(&hlpuart1, string, len) == HAL_OK){
+			xSemaphoreTake(sem, portMAX_DELAY);
+		}
+		xSemaphoreGive(mutex);
+	}
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+	BaseType_t pxHigherPriorityTaskWoken = pdFALSE;
+	xQueueSendToBackFromISR(queue_rx, huart->pRxBuffPtr, &pxHigherPriorityTaskWoken);
+	portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
+}
+
+void receive_uart(uint8_t *data){
+	xQueueReceive(queue_rx, data, portMAX_DELAY);
+}
+
+void echo(void *param){
+	uint8_t data;
+	uint8_t data_rx;
+	HAL_UART_Receive_IT(&hlpuart1, &data, 1);
+	while(1){
+		receive_uart(&data_rx);
+		if (data_rx == '\r'){
+			transmite_uart(&data_rx, 1);
+			data_rx = '\n';
+			transmite_uart(&data_rx, 1);
+		}else{
+			transmite_uart(&data_rx, 1);
+		}
+	}
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	BaseType_t pxHigherPriorityTaskWoken = pdFALSE;
+	HAL_NVIC_DisableIRQ(EXTI15_10_IRQn);
+	xTimerStartFromISR(debounce, &pxHigherPriorityTaskWoken);
+	portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
 }
 
 volatile uint32_t cnt3 = 0;
@@ -119,6 +172,18 @@ static void sobra_cpu(void *param){
 			teste = teste ^ 0xF3;
 		}
 	}
+}
+
+typedef enum button_codes_t_ {
+	BUTTON_1 = 1,
+	BUTTON_2,
+	BUTTON_3
+}button_codes_t;
+
+void debounce_callback( TimerHandle_t xTimer ){
+	uint8_t buffer = BUTTON_1;
+	xQueueSendToBack(queue_keyb, &buffer, 0);
+	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 /* USER CODE END 0 */
 
@@ -158,19 +223,24 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
+  mutex = xSemaphoreCreateMutex();
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   sem = xSemaphoreCreateBinary();
+  //sem_rx = xSemaphoreCreateBinary();
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
+  debounce = xTimerCreate("debounce do teclado", 50, pdFALSE, NULL, debounce_callback);
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+  queue_rx = xQueueCreate(16, sizeof(uint8_t));
+  queue_keyb = xQueueCreate(16, sizeof(char));
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -184,8 +254,9 @@ int main(void)
   //led_t led_azul = {LED_GPIO_Port, LED_Pin, 200};
   xTaskCreate(pisca_led, "Tarefa teste", 256, &led_verde, 4, NULL);
 
-  xTaskCreate(envia_serial_1, "serial 1", 256, NULL, 3, NULL);
-  xTaskCreate(envia_serial_2, "serial 2", 256, NULL, 3, NULL);
+  //xTaskCreate(envia_serial_1, "serial 1", 256, NULL, 3, NULL);
+  //xTaskCreate(envia_serial_2, "serial 2", 256, NULL, 3, NULL);
+  xTaskCreate(echo, "echo serial", 256, NULL, 3, NULL);
   xTaskCreate(sobra_cpu, "sobra", 256, NULL, 1, NULL);
   /* USER CODE END RTOS_THREADS */
 
@@ -310,11 +381,18 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : BUTTON_Pin */
+  GPIO_InitStruct.Pin = BUTTON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(BUTTON_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LED_Pin */
   GPIO_InitStruct.Pin = LED_Pin;
@@ -322,6 +400,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
