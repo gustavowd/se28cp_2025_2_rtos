@@ -45,7 +45,7 @@
 #include "FreeRTOS_ssp.h"
 #include "FreeRTOS_i2c.h"
 
-portBASE_TYPE vFreeRTOS_Tiva_PopulateFunctionPointers( const Peripheral_Types_t ePeripheralType, Peripheral_Control_t * const pxPeripheralControl )
+portBASE_TYPE vFreeRTOS_Stm32G4_PopulateFunctionPointers( const Peripheral_Types_t ePeripheralType, Peripheral_Control_t * const pxPeripheralControl )
 {
 portBASE_TYPE xReturn = pdFALSE;
 

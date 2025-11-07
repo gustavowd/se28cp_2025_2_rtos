@@ -50,6 +50,7 @@
 #include <stdio.h>
 #include <stm32g474xx.h>
 #include "stm32g4xx_hal.h"
+#include "stm32g4xx_hal_uart.h"
 
 
 /*******************************************************************************
@@ -64,9 +65,10 @@
  * See http://www.freertos.org/FreeRTOS-Plus/FreeRTOS_Plus_IO/Board_Support_Packages.shtml
  *
  ******************************************************************************/
+extern UART_HandleTypeDef hlpuart1;
 #define boardAVAILABLE_DEVICES_LIST												\
 {																				\
-	{ ( const int8_t * const ) "/LPUART1/", eUART_TYPE, ( void * ) LPUART1_BASE }	\
+	{ ( const int8_t * const ) "/LPUART1/", eUART_TYPE, ( void * ) &hlpuart1 }	\
 }
 
 /*******************************************************************************
@@ -98,6 +100,22 @@ portBASE_TYPE vFreeRTOS_Stm32G4_PopulateFunctionPointers( const Peripheral_Types
  * Configure port UART port pins to be correct for the wiring of the
  * STM32G474RE base board.
  ******************************************************************************/
+/**LPUART1 GPIO Configuration
+PA2     ------> LPUART1_TX
+PA3     ------> LPUART1_RX
+*/
+#define LPUART1_BASE_ADDRESS LPUART1
+#define LPUART1_TX_Pin GPIO_PIN_2
+#define LPUART1_TX_GPIO_Port GPIOA
+#define LPUART1_RX_Pin GPIO_PIN_3
+#define LPUART1_RX_GPIO_Port GPIOA
+#define LPUART1_IRQ_NUMBER LPUART1_IRQn
+#define LPUART1_PINS_ALTERNATE_FUNCTIONS GPIO_AF12_LPUART1
+#define LPUART1_CLOCK_INIT() 			PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1;\
+										PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_PCLK1;\
+										HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit);\
+										__HAL_RCC_LPUART1_CLK_ENABLE();\
+										__HAL_RCC_GPIOA_CLK_ENABLE()
 #if 0
 #define boardCONFIGURE_UART_PINS( cPeripheralNumber, xPinConfig )					\
 	switch( ( cPeripheralNumber ) )													\

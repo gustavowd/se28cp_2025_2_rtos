@@ -160,6 +160,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32g4xx_hal.h"
+#include "stm32g4xx_hal_uart.h"
 
 /** @addtogroup STM32G4xx_HAL_Driver
   * @{
@@ -170,7 +171,7 @@
   * @{
   */
 
-#ifdef HAL_UART_MODULE_ENABLED
+#if 1
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/

@@ -125,6 +125,10 @@ typedef struct xPERIPHREAL_CONTROL
 /* I2C specific ioctl requests. */
 #define ioctlSET_I2C_SLAVE_ADDRESS			300
 
+/* UART specific ioctl requests. */
+#define ioctlSET_UART_NUMBER_OF_STOP_BITS	400
+#define ioctlSET_UART_PARITY_MODE			401
+
 /* Private ioctl requests. */
 #define ioctlUSE_INTERRUPTS					101
 
@@ -151,8 +155,8 @@ portBASE_TYPE FreeRTOS_ioctl( Peripheral_Descriptor_t const xPeripheral, uint32_
  * Macros for the functions that are really macros to keep the call depth down
  * and the efficiency up.
  */
-#define FreeRTOS_write( xPeripheral, pvBuffer, xBytes ) ( ( Peripheral_Control_t * ) xPeripheral )->write2( ( ( Peripheral_Control_t * ) xPeripheral ), ( pvBuffer ), ( xBytes ) )
-#define FreeRTOS_read( xPeripheral, pvBuffer, xBytes ) ( ( Peripheral_Control_t * ) xPeripheral )->read2( ( ( Peripheral_Control_t * ) xPeripheral ), ( pvBuffer ), ( xBytes ) )
+#define FreeRTOS_write( xPeripheral, pvBuffer, xBytes ) ( ( Peripheral_Control_t * ) xPeripheral )->write( ( ( Peripheral_Control_t * ) xPeripheral ), ( pvBuffer ), ( xBytes ) )
+#define FreeRTOS_read( xPeripheral, pvBuffer, xBytes ) ( ( Peripheral_Control_t * ) xPeripheral )->read( ( ( Peripheral_Control_t * ) xPeripheral ), ( pvBuffer ), ( xBytes ) )
 
 
 #endif
