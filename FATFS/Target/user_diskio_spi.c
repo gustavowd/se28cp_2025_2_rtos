@@ -27,6 +27,9 @@
 #include "stm32g4xx_hal.h" /* Provide the low-level HAL functions */
 #include "user_diskio_spi.h"
 
+
+SemaphoreHandle_t spi_rx_sem;
+SemaphoreHandle_t spi_tx_sem;
 //Make sure you set #define SD_SPI_HANDLE as some hspix in main.h
 //Make sure you set #define SD_CS_GPIO_Port as some GPIO port in main.h
 //Make sure you set #define SD_CS_Pin as some GPIO pin in main.h
@@ -111,19 +114,38 @@ BYTE xchg_spi (
 
 
 /* Receive multiple byte */
-static
-void rcvr_spi_multi (
+static const uint8_t tx_buffer[512] = {0xFF};
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	portBASE_TYPE yield = pdFALSE;
+	xSemaphoreGiveFromISR(spi_rx_sem, &yield);
+	portYIELD_FROM_ISR(yield);
+}
+
+
+static void rcvr_spi_multi (
 	BYTE *buff,		/* Pointer to data buffer */
 	UINT btr		/* Number of bytes to receive (even number) */
 )
 {
+	HAL_SPI_TransmitReceive_DMA(&SD_SPI_HANDLE, tx_buffer, buff, btr);
+	xSemaphoreTake(spi_rx_sem, portMAX_DELAY);
+	/*
 	for(UINT i=0; i<btr; i++) {
 		*(buff+i) = xchg_spi(0xFF);
 	}
+	*/
 }
 
 
 #if _USE_WRITE
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	portBASE_TYPE yield = pdFALSE;
+	xSemaphoreGiveFromISR(spi_tx_sem, &yield);
+	portYIELD_FROM_ISR(yield);
+}
 /* Send multiple byte */
 static
 void xmit_spi_multi (
@@ -131,7 +153,8 @@ void xmit_spi_multi (
 	UINT btx			/* Number of bytes to send (even number) */
 )
 {
-	HAL_SPI_Transmit(&SD_SPI_HANDLE, buff, btx, HAL_MAX_DELAY);
+	HAL_SPI_Transmit_DMA(&SD_SPI_HANDLE, buff, btx);
+	xSemaphoreTake(spi_tx_sem, portMAX_DELAY);
 }
 #endif
 
@@ -155,6 +178,10 @@ int wait_ready (	/* 1:Ready, 0:Timeout */
 	waitSpiTimerTickDelay = (uint32_t)wt;
 	do {
 		d = xchg_spi(0xFF);
+		if (d == 0xFF){
+			break;
+		}
+		vTaskDelay(2);
 		/* This loop takes a time. Insert rot_rdq() here for multitask envilonment. */
 	} while (d != 0xFF && ((HAL_GetTick() - waitSpiTimerTickStart) < waitSpiTimerTickDelay));	/* Wait for card goes ready or timeout */
 
@@ -320,6 +347,8 @@ inline DSTATUS USER_SPI_initialize (
 )
 {
 	BYTE n, cmd, ty, ocr[4];
+	spi_rx_sem = xSemaphoreCreateBinary();
+	spi_tx_sem = xSemaphoreCreateBinary();
 
 	if (drv != 0) return STA_NOINIT;		/* Supports only drive 0 */
 	//assume SPI already init init_spi();	/* Initialize SPI */
